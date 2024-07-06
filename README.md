@@ -1,6 +1,10 @@
 # apidownlaoder
 从api链接批量下载的工具
-## 已实现功能
+
+## 食用方法
+[点击前往releases下载](https://github.com/escateam/apidownlaoder/releases)
+
+## 功能列表
 - [x] UI支持，直观简洁，更利于操作
 - [x] 自定义下载，支持自定义下载链接，下载路径，下载次数，下载间隔
 - [x] 双语言，支持Eghlish
