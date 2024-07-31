@@ -2,16 +2,15 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import requests
 import os
-import string
-import random
 import threading
 import time
+import hashlib
 import configparser
 
 class FileDownloaderApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("API图片下载工具--版本1.0.8    By:EscaWorkTeam")
+        self.root.title("API图片下载工具--版本1.0.9    By:EscaWorkTeam")
 
         self.config_filename = "config.ini"
         self.load_config()
@@ -30,7 +29,8 @@ class FileDownloaderApp:
                 'toggle_language_button': 'English',
                 'delete_images_button': '删除图片',
                 'delete_config_button': '删除配置文件',
-                'open_dir_button': '打开下载目录'
+                'open_dir_button': '打开下载目录',
+                'complete_message': '下载完成，{fail_count}个失败，{success_count}个成功'
             },
             'English': {
                 'status_label': 'Status: Not Started',
@@ -45,7 +45,8 @@ class FileDownloaderApp:
                 'toggle_language_button': '中文',
                 'delete_images_button': 'Delete Images',
                 'delete_config_button': 'Delete Config File',
-                'open_dir_button': 'Open Download Directory'
+                'open_dir_button': 'Open Download Directory',
+                'complete_message': 'Download complete, {fail_count} failed, {success_count} successful'
             }
         }
 
@@ -55,25 +56,29 @@ class FileDownloaderApp:
         self.status_label = tk.Label(self.root, text=self.texts[self.language]['status_label'])
         self.status_label.grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
 
-        tk.Label(self.root, text=self.texts[self.language]['api_label']).grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+        self.api_label = tk.Label(self.root, text=self.texts[self.language]['api_label'])
+        self.api_label.grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
         self.api_combobox = ttk.Combobox(self.root, width=47)
         self.api_combobox.grid(row=1, column=1, padx=5, pady=5, columnspan=2)
         self.api_combobox.set(self.api_link)
         self.api_combobox['values'] = tuple(self.api_history)
 
-        tk.Label(self.root, text=self.texts[self.language]['save_dir_label']).grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
+        self.save_dir_label = tk.Label(self.root, text=self.texts[self.language]['save_dir_label'])
+        self.save_dir_label.grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
         self.save_dir_entry = tk.Entry(self.root, width=50)
         self.save_dir_entry.grid(row=2, column=1, padx=5, pady=5)
         self.save_dir_entry.insert(0, self.save_dir)
         self.browse_button = tk.Button(self.root, text=self.texts[self.language]['browse_button'], command=self.browse_directory)
         self.browse_button.grid(row=2, column=2, padx=5, pady=5)
 
-        tk.Label(self.root, text=self.texts[self.language]['download_count_label']).grid(row=3, column=0, padx=5, pady=5, sticky=tk.W)
+        self.download_count_label = tk.Label(self.root, text=self.texts[self.language]['download_count_label'])
+        self.download_count_label.grid(row=3, column=0, padx=5, pady=5, sticky=tk.W)
         self.download_count_entry = tk.Entry(self.root, width=10)
         self.download_count_entry.grid(row=3, column=1, padx=5, pady=5)
         self.download_count_entry.insert(0, self.download_count)
 
-        tk.Label(self.root, text=self.texts[self.language]['download_interval_label']).grid(row=4, column=0, padx=5, pady=5, sticky=tk.W)
+        self.download_interval_label = tk.Label(self.root, text=self.texts[self.language]['download_interval_label'])
+        self.download_interval_label.grid(row=4, column=0, padx=5, pady=5, sticky=tk.W)
         self.download_interval_entry = tk.Entry(self.root, width=10)
         self.download_interval_entry.grid(row=4, column=1, padx=5, pady=5)
         self.download_interval_entry.insert(0, self.download_interval)
@@ -87,11 +92,14 @@ class FileDownloaderApp:
         self.progress = ttk.Progressbar(self.root, orient="horizontal", length=400, mode="determinate")
         self.progress.grid(row=7, column=0, columnspan=3, pady=10)
 
+        self.progress_percentage_label = tk.Label(self.root, text="0%")
+        self.progress_percentage_label.grid(row=8, column=0, columnspan=3, pady=5)
+
         self.log_frame = tk.Frame(self.root)
-        self.log_frame.grid(row=8, column=0, columnspan=3, padx=5, pady=5)
+        self.log_frame.grid(row=9, column=0, columnspan=3, padx=5, pady=5)
 
         self.log_toggle_button = tk.Button(self.root, text=self.texts[self.language]['log_toggle_button'], command=self.toggle_log)
-        self.log_toggle_button.grid(row=9, column=0, columnspan=3, pady=5)
+        self.log_toggle_button.grid(row=10, column=0, columnspan=3, pady=5)
 
         self.log_text = tk.Text(self.log_frame, height=10, width=60)
         self.log_text.pack()
@@ -100,16 +108,16 @@ class FileDownloaderApp:
         self.log_frame.grid_remove()  # 初始时隐藏日志框
 
         self.toggle_language_button = tk.Button(self.root, text=self.texts[self.language]['toggle_language_button'], command=self.toggle_language)
-        self.toggle_language_button.grid(row=10, column=2, padx=5, pady=5, sticky=tk.E)
+        self.toggle_language_button.grid(row=11, column=2, padx=5, pady=5, sticky=tk.E)
 
         self.delete_images_button = tk.Button(self.root, text=self.texts[self.language]['delete_images_button'], command=self.delete_images)
-        self.delete_images_button.grid(row=11, column=0, padx=5, pady=5)
+        self.delete_images_button.grid(row=12, column=0, padx=5, pady=5)
 
         self.delete_config_button = tk.Button(self.root, text=self.texts[self.language]['delete_config_button'], command=self.delete_config_file)
-        self.delete_config_button.grid(row=11, column=1, padx=5, pady=5)
+        self.delete_config_button.grid(row=12, column=1, padx=5, pady=5)
 
         self.open_dir_button = tk.Button(self.root, text=self.texts[self.language]['open_dir_button'], command=self.open_download_directory)
-        self.open_dir_button.grid(row=11, column=2, padx=5, pady=5)
+        self.open_dir_button.grid(row=12, column=2, padx=5, pady=5)
 
     def load_config(self):
         if not os.path.exists(self.config_filename):
@@ -172,121 +180,19 @@ class FileDownloaderApp:
                 self.log_message(f"删除图片文件时出错：{e}" if self.language == '中文' else f"Error deleting image files: {e}")
 
     def delete_config_file(self):
-        confirmation = messagebox.askyesno("确认删除", "您确定要删除配置文件吗？" if self.language == '中文' else "Are you sure you want to delete the configuration file?")
+        confirmation = messagebox.askyesno(
+            "确认删除", 
+            "您确定要删除配置文件吗？" if self.language == '中文' else "Are you sure you want to delete the config file?"
+        )
         if confirmation:
             try:
                 os.remove(self.config_filename)
-                self.log_message("配置文件已成功删除！" if self.language == '中文' else "Configuration file successfully deleted!")
+                self.log_message("配置文件已删除！" if self.language == '中文' else "Config file has been deleted!")
             except Exception as e:
-                self.log_message(f"删除配置文件时出错：{e}" if self.language == '中文' else f"Error deleting configuration file: {e}")
-
-    def generate_random_filename(self, length=10, extension=".png"):
-        characters = string.ascii_letters + string.digits
-        random_filename = ''.join(random.choice(characters) for _ in range(length))
-        return random_filename + extension
-
-    def log_message(self, message):
-        self.log_text.config(state=tk.NORMAL)
-        self.log_text.insert(tk.END, message + "\n")
-        self.log_text.config(state=tk.DISABLED)
-        self.log_text.see(tk.END)
-
-    def update_progress_label(self, current, total):
-        remaining = total - current
-        progress_text = {
-            '中文': f"已下载{current}个文件，剩余{remaining}个文件，共{total}个文件",
-            'English': f"Downloaded {current} files, Remaining {remaining} files, Total {total} files"
-        }
-        self.progress_label.config(text=progress_text[self.language])
-
-    def download_file(self, api_link, save_dir, index, total):
-        try:
-            response = requests.get(api_link)
-            response.raise_for_status()
-            filename = self.generate_random_filename()
-            save_path = os.path.join(save_dir, filename)
-            with open(save_path, 'wb') as file:
-                file.write(response.content)
-            message = f"文件已成功保存到 {save_path}" if self.language == '中文' else f"File successfully saved to {save_path}"
-            self.log_message(message)
-            self.progress["value"] += 100 / total
-            self.update_progress_label(index, total)
-            return True
-        except requests.exceptions.RequestException as e:
-            error_message = f"下载失败: {e}" if self.language == '中文' else f"Download failed: {e}"
-            self.log_message(error_message)
-            return False
-        except PermissionError:
-            error_message = f"没有权限写入文件: {save_path}" if self.language == '中文' else f"No permission to write file: {save_path}"
-            self.log_message(error_message)
-            return False
-        except Exception as e:
-            error_message = f"发生了未知错误: {e}" if self.language == '中文' else f"An unknown error occurred: {e}"
-            self.log_message(error_message)
-            return False
-
-    def start_download(self):
-        self.api_link = self.api_combobox.get().strip()
-        self.save_dir = self.save_dir_entry.get().strip()
-        self.download_count = self.download_count_entry.get().strip()
-        self.download_interval = self.download_interval_entry.get().strip()
-
-        if not self.api_link:
-            messagebox.showerror("错误", "API链接不能为空!" if self.language == '中文' else "API link cannot be empty!")
-            return
-
-        if not self.save_dir:
-            messagebox.showerror("错误", "保存目录不能为空!" if self.language == '中文' else "Save directory cannot be empty!")
-            return
-
-        if not os.path.isdir(self.save_dir):
-            messagebox.showerror("错误", "保存目录无效或不存在!" if self.language == '中文' else "Save directory is invalid or does not exist!")
-            return
-
-        if not os.access(self.save_dir, os.W_OK):
-            messagebox.showerror("错误", "没有写入权限到指定目录!" if self.language == '中文' else "No write permission to the specified directory!")
-            return
-
-        if not self.download_count.isdigit() or int(self.download_count) <= 0:
-            messagebox.showerror("错误", "下载次数必须是一个大于0的整数!" if self.language == '中文' else "Download count must be a positive integer!")
-            return
-
-        try:
-            float(self.download_interval)  # 尝试将下载间隔转为浮点数
-        except ValueError:
-            messagebox.showerror("错误", "下载间隔秒数必须是数字!" if self.language == '中文' else "Download interval must be a number!")
-            return
-
-        self.save_config()  # 保存配置信息
-
-        self.progress["value"] = 0
-        self.progress["maximum"] = 100
-
-        self.status_label.config(text="状态: 正在下载" if self.language == '中文' else "Status: Downloading")
-        threading.Thread(target=self.download_files).start()
-
-    def download_files(self):
-        success_count = 0
-        fail_count = 0
-
-        for i in range(int(self.download_count)):
-            success = self.download_file(self.api_link, self.save_dir, i + 1, int(self.download_count))
-            if success:
-                success_count += 1
-            else:
-                fail_count += 1
-            try:
-                if float(self.download_interval) > 0:
-                    time.sleep(float(self.download_interval))
-            except ValueError:
-                pass
-
-        self.status_label.config(text="状态: 下载完成" if self.language == '中文' else "Status: Download Complete")
-        self.log_message("所有下载任务已完成" if self.language == '中文' else "All download tasks completed")
-        messagebox.showinfo("完成" if self.language == '中文' else "Complete", f"下载完成，{fail_count}个失败，{success_count}个成功" if self.language == '中文' else f"Download complete, {fail_count} failed, {success_count} successful")
+                self.log_message(f"删除配置文件时出错：{e}" if self.language == '中文' else f"Error deleting config file: {e}")
 
     def toggle_log(self):
-        if self.log_frame.winfo_viewable():
+        if self.log_frame.winfo_ismapped():
             self.log_frame.grid_remove()
             self.log_toggle_button.config(text=self.texts[self.language]['log_toggle_button'])
         else:
@@ -294,30 +200,120 @@ class FileDownloaderApp:
             self.log_toggle_button.config(text=self.texts[self.language]['log_toggle_button'])
 
     def toggle_language(self):
-        self.language = 'English' if self.language == '中文' else '中文'
-        self.update_ui_language()
-        self.save_config()  # 保存语言设置
+        self.language = '中文' if self.language == 'English' else 'English'
+        self.save_config()
+        self.refresh_ui()
 
-    def update_ui_language(self):
+    def refresh_ui(self):
         self.status_label.config(text=self.texts[self.language]['status_label'])
-        self.root.title("文件下载器" if self.language == '中文' else "File Downloader")
+        self.api_label.config(text=self.texts[self.language]['api_label'])
+        self.save_dir_label.config(text=self.texts[self.language]['save_dir_label'])
         self.browse_button.config(text=self.texts[self.language]['browse_button'])
+        self.download_count_label.config(text=self.texts[self.language]['download_count_label'])
+        self.download_interval_label.config(text=self.texts[self.language]['download_interval_label'])
         self.download_button.config(text=self.texts[self.language]['download_button'])
+        self.progress_label.config(text=self.texts[self.language]['progress_label'])
         self.log_toggle_button.config(text=self.texts[self.language]['log_toggle_button'])
         self.toggle_language_button.config(text=self.texts[self.language]['toggle_language_button'])
-        self.progress_label.config(text=self.texts[self.language]['progress_label'])
         self.delete_images_button.config(text=self.texts[self.language]['delete_images_button'])
         self.delete_config_button.config(text=self.texts[self.language]['delete_config_button'])
         self.open_dir_button.config(text=self.texts[self.language]['open_dir_button'])
 
-        for widget, text in [
-            (1, 'api_label'),
-            (2, 'save_dir_label'),
-            (3, 'download_count_label'),
-            (4, 'download_interval_label')
-        ]:
-            label_widget = self.root.grid_slaves(row=widget, column=0)[0]
-            label_widget.config(text=self.texts[self.language][text])
+    def start_download(self):
+        self.api_link = self.api_combobox.get().strip()
+        self.save_dir = self.save_dir_entry.get().strip()
+        self.download_count = self.download_count_entry.get().strip()
+        self.download_interval = self.download_interval_entry.get().strip()
+
+        if not self.api_link or not self.save_dir or not self.download_count or not self.download_interval:
+            messagebox.showerror("错误", "所有字段都是必填的！" if self.language == '中文' else "All fields are required!")
+            return
+
+        try:
+            self.download_count = int(self.download_count)
+            self.download_interval = float(self.download_interval)
+        except ValueError:
+            messagebox.showerror("错误", "下载次数和下载间隔必须是数字！" if self.language == '中文' else "Download count and interval must be numeric!")
+            return
+
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
+
+        if self.api_link not in self.api_history:
+            self.api_history.append(self.api_link)
+
+        self.save_config()
+
+        self.progress["value"] = 0
+        self.progress["maximum"] = self.download_count
+        self.progress_label.config(text=self.texts[self.language]['progress_label'])
+        self.progress_percentage_label.config(text="0%")
+        self.status_label.config(text=self.texts[self.language]['status_label'])
+
+        threading.Thread(target=self.download_files).start()
+
+    def log_message(self, message):
+        self.log_text.config(state=tk.NORMAL)
+        self.log_text.insert(tk.END, message + "\n")
+        self.log_text.yview(tk.END)
+        self.log_text.config(state=tk.DISABLED)
+
+    def download_files(self):
+        success_count = 0
+        fail_count = 0
+
+        for i in range(self.download_count):
+            try:
+                response = requests.get(self.api_link)
+                response.raise_for_status()
+
+                content_disposition = response.headers.get("Content-Disposition", "")
+                filename = content_disposition.split("filename=")[-1].strip('"') if "filename=" in content_disposition else f"image_{int(time.time())}.png"
+                file_path = os.path.join(self.save_dir, filename)
+
+                with open(file_path, "wb") as file:
+                    file.write(response.content)
+
+                if self.is_duplicate_file(file_path):
+                    os.remove(file_path)
+                    raise Exception("文件重复，已删除！" if self.language == '中文' else "Duplicate file, deleted!")
+
+                success_count += 1
+                self.log_message(f"文件已下载: {file_path}" if self.language == '中文' else f"File downloaded: {file_path}")
+            except Exception as e:
+                fail_count += 1
+                self.log_message(f"下载文件时出错: {e}" if self.language == '中文' else f"Error downloading file: {e}")
+
+            self.progress["value"] += 1
+            percentage = (self.progress["value"] / self.download_count) * 100
+            self.progress_percentage_label.config(text=f"{percentage:.2f}%")
+
+            remaining_files = self.download_count - self.progress["value"]
+            self.progress_label.config(text=f"已下载{self.progress['value']}个文件，剩余{remaining_files}个文件，共{self.download_count}个文件" if self.language == '中文' else f"Downloaded {self.progress['value']} files, Remaining {remaining_files} files, Total {self.download_count} files")
+
+            self.status_label.config(text=self.texts[self.language]['status_label'])
+            self.save_config()
+
+            time.sleep(self.download_interval)
+
+        messagebox.showinfo("完成", self.texts[self.language]['complete_message'].format(fail_count=fail_count, success_count=success_count))
+
+    def is_duplicate_file(self, file_path):
+        try:
+            with open(file_path, "rb") as file:
+                file_hash = hashlib.md5(file.read()).hexdigest()
+
+            for existing_file in os.listdir(self.save_dir):
+                existing_file_path = os.path.join(self.save_dir, existing_file)
+                if existing_file_path != file_path:
+                    with open(existing_file_path, "rb") as existing:
+                        existing_file_hash = hashlib.md5(existing.read()).hexdigest()
+                        if file_hash == existing_file_hash:
+                            return True
+        except Exception as e:
+            self.log_message(f"计算哈希值时出错: {e}" if self.language == '中文' else f"Error calculating hash: {e}")
+
+        return False
 
 if __name__ == "__main__":
     root = tk.Tk()
